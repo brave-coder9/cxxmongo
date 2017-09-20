@@ -1,0 +1,2 @@
+#!/bin/sh
+daemon --name=parser --output=log sh /root/cpp/parser.sh

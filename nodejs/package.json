@@ -1,0 +1,22 @@
+{
+  "name": "handlenode",
+  "version": "1.0.0",
+  "description": "execute sh files",
+  "main": "server.js",
+  "scripts": {
+    "test": "echo \"Error: no test specified\" && exit 1",
+    "start": "node server.js"
+  },
+  "keywords": [
+    "express.js",
+    "run-script"
+  ],
+  "author": "",
+  "license": "ISC",
+  "dependencies": {
+    "body-parser": "^1.18.1",
+    "cors": "^2.8.4",
+    "express": "^4.15.4",
+    "shelljs": "^0.7.8"
+  }
+}
