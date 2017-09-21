@@ -71,9 +71,11 @@ using bsoncxx::builder::stream::close_document;
 const unsigned int NUMTHREADS = 768;
 const unsigned int NUMTHREADS_MONGO = 32;
 bool DEBUG = false;
+atomic<int> stations_readed;
 atomic<int> stations_checked;
 atomic<int> stations_updated;
 atomic<int> updates_pending;
+
 map<string, shared_ptr<Station>> station_map;
 vector<shared_ptr<Station>> station_vector;
 mongocxx::instance inst{};
@@ -82,12 +84,12 @@ mongocxx::instance inst{};
 /* when this app runs on my local */
 const string connection_string = "mongodb://mongoadminrole:susuSUSU1234!%40%23%24@localhost:27018?authSource=admin&ext.ssh.server=178.33.122.217:22&ext.ssh.username=root&ext.ssh.password=susuSUSU1234!@#$";
 
-mongocxx::pool mongopool {mongocxx::uri{connection_string}};
-// mongocxx::pool mongopool {mongocxx::uri{}};
+// mongocxx::pool mongopool {mongocxx::uri{connection_string}};
+mongocxx::pool mongopool {mongocxx::uri{}};
 boost::asio::io_service svc_mongo;
 boost::asio::io_service svc;
 int main (int ac, char **av) {
-    stations_checked = stations_updated = updates_pending = 0;
+    stations_readed = stations_checked = stations_updated = updates_pending = 0;
 
 po::options_description desc("Allowed options");
 desc.add_options()
@@ -125,17 +127,18 @@ if (vm.count("help")) {
     }
 
 
-    // std::thread report([](){
-    //     unsigned int c=0, u=0;
-    //     while (1) {
-    //         cout << "Checked: " << stations_checked << " (" << stations_checked-c << "/s) Updated: " << stations_updated
-    //             << " (" << stations_updated-u << "/s)" << endl;
-    //         cout << updates_pending << " updates pending..." << endl;
-    //         c = stations_checked;
-    //         u = stations_updated;
-    //         sleep(1);
-    //     }
-    // });
+    std::thread report([](){
+        unsigned int r=0, c=0, u=0;
+        while (1) {
+            cout << "DB-Records: " << stations_readed << " (" << stations_readed-r << "/s)" << ", Checked: " << stations_checked << " (" << stations_checked-c << "/s) Updated: " << stations_updated
+                << " (" << stations_updated-u << "/s)" << endl;
+            // cout << updates_pending << " updates pending..." << endl;
+            r = stations_readed;
+            c = stations_checked;
+            u = stations_updated;
+            sleep(1);
+        }
+    });
 
     boost::asio::io_service::work work(svc);
     boost::thread_group threads, threads_mongo;
@@ -240,6 +243,7 @@ void check_online(void) {
 
     for (auto doc : cursor) {
         try {
+            stations_readed++;
             //auto ptr = make_shared<bsoncxx::document::view>(doc.data(), doc.length());
             shared_ptr<Station> one_station = make_shared<Station>();
             string str_stream_url = doc["stream"].get_utf8().value.to_string();
@@ -374,8 +378,8 @@ bool parse_station (shared_ptr<bsoncxx::builder::stream::document> update, pair<
         detect_station(update, response, ptr);
     }
 
-    cout << "======== Found [" << ptr->type << "] Server: " << ptr->url << endl;
     if (DEBUG) {
+        cout << "======== Found [" << ptr->type << "] Server: " << ptr->url << endl;
         cout << "----- Headers: " << endl << response.first << endl;
         cout << "-----" << endl;
     }
@@ -403,7 +407,8 @@ bool parse_station (shared_ptr<bsoncxx::builder::stream::document> update, pair<
                         now = now_tmp.substr(0, last_pos);
                     }
                     if (!now.empty()) {
-                        cout << "@@@@@@@@ icecast: " << ptr->url << " @@@@ Now playing: " << now << " @@@@" << endl;
+                        if (DEBUG)
+                            cout << "@@@@@@@@ icecast: " << ptr->url << " @@@@ Now playing: " << now << " @@@@" << endl;
                         (*update) << "now" << now;
                         ptr->now = now;
                     }
@@ -419,7 +424,8 @@ bool parse_station (shared_ptr<bsoncxx::builder::stream::document> update, pair<
         (*update) << "station_type" << "shoutcast";
         string now = regex_fetch(response.second, "<tr><td width=100 nowrap><font class=default>Current Song: </font></td><td><font class=default><b>([^<]*)</b></td>");
         if (!now.empty()){
-            cout << "@@@@@@@@ shoutcast: " << ptr->url << " @@@@ Now playing: " << now << " @@@@" << endl;
+            if (DEBUG)
+                cout << "@@@@@@@@ shoutcast: " << ptr->url << " @@@@ Now playing: " << now << " @@@@" << endl;
             (*update) << "now" << now;
             ptr->now = now;
         }
@@ -601,6 +607,7 @@ bool regex_match_ex(string src, string rstr)
  */
 void send_station_to_server(shared_ptr<Station> ptr)
 {
+    stations_updated++;
     const string str_nop = "NA";
     string station_type = ptr->type;
     string now = ptr->now, now_id = str_nop;
@@ -621,15 +628,18 @@ void send_station_to_server(shared_ptr<Station> ptr)
         artist_id = str_nop;
 
     delete tmp;
-    cout << "$$$$$$$$$$$$ station value $$$$$$$$$$$$" << endl;
-    cout << "station_type = " << station_type << endl;
-    cout << "now = " << now << endl;
-    cout << "now_id = " << now_id << endl;
-    cout << "artist = " << artist << endl;
-    cout << "artist_id = " << artist_id << endl;
-    cout << "release = " << release << endl;
-    cout << "release_id = " << release_id << endl;
-    cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$" << endl;
+
+    if (DEBUG) {
+        cout << "$$$$$$$$$$$$ station value $$$$$$$$$$$$" << endl;
+        cout << "station_type = " << station_type << endl;
+        cout << "now = " << now << endl;
+        cout << "now_id = " << now_id << endl;
+        cout << "artist = " << artist << endl;
+        cout << "artist_id = " << artist_id << endl;
+        cout << "release = " << release << endl;
+        cout << "release_id = " << release_id << endl;
+        cout << "$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$$" << endl;
+    }
     
     //
     // send to nodejs server
