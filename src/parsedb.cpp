@@ -246,14 +246,19 @@ void check_online(void) {
             stations_readed++;
             //auto ptr = make_shared<bsoncxx::document::view>(doc.data(), doc.length());
             shared_ptr<Station> one_station = make_shared<Station>();
-            string str_stream_url = doc["stream"].get_utf8().value.to_string();
-            if (DEBUG)
-                cout << "-------- stream : " << str_stream_url << endl;
-
-            (*one_station).url = str_stream_url;
-            (*one_station).type = doc["station_type"].get_utf8().value.to_string(); // shoutcast, icecast, etc
+            if (doc["stream"]) {
+                (*one_station).url = doc["stream"].get_utf8().value.to_string();
+                if (DEBUG)
+                    cout << "-------- stream : " << (*one_station).url << endl;
+            } else {
+                (*one_station).url = "";
+            }
+            if (doc["station_type"])
+                (*one_station).type = doc["station_type"].get_utf8().value.to_string(); // shoutcast, icecast, etc
+            else
+                (*one_station).type = "";
             (*one_station).id = doc["_id"].get_oid();
-            // if (doc["metaint"].length() > 0)
+            // if (doc["metaint"])
             //    (*one_station).icy = doc["metaint"].get_int32().value;
             station_map[one_station->id.value.to_string()] = one_station;
         } catch (std::exception &e) {
