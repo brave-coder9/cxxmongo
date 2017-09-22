@@ -266,7 +266,7 @@ void check_online(void) {
                 cout << "***** Exception on fetching mongo data: " << e.what() << endl;
         }
 
-        boost::this_thread::sleep(boost::posix_time::milliseconds(10));
+        boost::this_thread::sleep(boost::posix_time::milliseconds(100));
     
         //zzz+ for test
         // c++;
