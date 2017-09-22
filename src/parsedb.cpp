@@ -248,8 +248,8 @@ void check_online(void) {
             shared_ptr<Station> one_station = make_shared<Station>();
             if (doc["stream"]) {
                 (*one_station).url = doc["stream"].get_utf8().value.to_string();
-                if (DEBUG)
-                    cout << "-------- stream : " << (*one_station).url << endl;
+                // if (DEBUG)
+                //     cout << "-------- stream : " << (*one_station).url << endl;
             } else {
                 (*one_station).url = "";
             }
@@ -266,7 +266,7 @@ void check_online(void) {
                 cout << "***** Exception on fetching mongo data: " << e.what() << endl;
         }
 
-        boost::this_thread::sleep(boost::posix_time::milliseconds(100));
+        // boost::this_thread::sleep(boost::posix_time::milliseconds(1));
     
         //zzz+ for test
         // c++;
