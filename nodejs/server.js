@@ -7,7 +7,7 @@ var app = express();
 //support parsing of application/json type post data
 app.use(bodyParser.json());
 //support parsing of application/x-www-form-urlencoded post data
-app.use(bodyParser.urlencoded({ extended: true }));
+app.use(bodyParser.urlencoded({ extended: false }));
 /**
  * For Cross-Origin
  */
@@ -52,7 +52,7 @@ app.post('/station_info', function (req, res) {
     res.header("Access-Control-Allow-Origin", "*");
     res.header("Access-Control-Allow-Headers", "Origin, X-Requested-With, Content-Type, Accept");
     res.writeHead(200, {
-        'Content-Type': 'application/json'
+        'Content-Type': 'text/plain'
     });
     res.end("");
 });

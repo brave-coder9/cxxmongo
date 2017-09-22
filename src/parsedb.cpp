@@ -30,6 +30,7 @@ struct Station {
     string url, type, now;
     bsoncxx::types::b_oid id;
     int icy;
+    bool started;
 };
 
 struct SongDetail {
@@ -68,9 +69,13 @@ using bsoncxx::builder::stream::close_document;
 // id   check  karma  url   fURL  title  fail#  lastSuc  error  type
 //
 
-const unsigned int NUMTHREADS = 768;
-const unsigned int NUMTHREADS_MONGO = 32;
-bool DEBUG = true;
+// const unsigned int NUMTHREADS = 768;
+// const unsigned int NUMTHREADS_MONGO = 32;
+const unsigned int NUMTHREADS = 10000;
+const unsigned int NUMTHREADS_MONGO = 10000;
+
+bool DEBUG = false;
+
 atomic<int> stations_readed;
 atomic<int> stations_checked;
 atomic<int> stations_updated;
@@ -82,10 +87,10 @@ mongocxx::instance inst{};
 /* when this app runs on server */
 const string connection_string = "mongodb://mongoadminrole:susuSUSU1234!%40%23%24@127.0.0.1:27018/radio?authSource=admin";
 /* when this app runs on my local */
-//const string connection_string = "mongodb://mongoadminrole:susuSUSU1234!%40%23%24@localhost:27018?authSource=admin&ext.ssh.server=178.33.122.217:22&ext.ssh.username=root&ext.ssh.password=susuSUSU1234!@#$";
+// const string connection_string = "mongodb://mongoadminrole:susuSUSU1234!%40%23%24@localhost:27018?authSource=admin&ext.ssh.server=178.33.122.217:22&ext.ssh.username=root&ext.ssh.password=susuSUSU1234!@#$";
 
-mongocxx::pool mongopool {mongocxx::uri{connection_string}};
-//mongocxx::pool mongopool {mongocxx::uri{}};
+// mongocxx::pool mongopool {mongocxx::uri{connection_string}};
+mongocxx::pool mongopool {mongocxx::uri{}};
 boost::asio::io_service svc_mongo;
 boost::asio::io_service svc;
 int main (int ac, char **av) {
@@ -127,15 +132,40 @@ if (vm.count("help")) {
     }
 
 
+    // std::thread report([](){
+    //     unsigned int r=0, c=0, u=0;
+    //     while (1) {
+    //         cout << "Checked: " << stations_checked << " (" << stations_checked-c << "/s) Updated: " << stations_updated
+    //             << " (" << stations_updated-u << "/s)" << endl;
+    //         // cout << updates_pending << " updates pending..." << endl;
+    //         c = stations_checked;
+    //         u = stations_updated;
+    //         sleep(1);
+    //     }
+    // });
+
     std::thread report([](){
-        unsigned int r=0, c=0, u=0;
+        unsigned int c=0, u=0, seconds = 0;
         while (1) {
-            cout << "DB-Records: " << stations_readed << " (" << stations_readed-r << "/s)" << ", Checked: " << stations_checked << " (" << stations_checked-c << "/s) Updated: " << stations_updated
+            cout << "Stations: " << stations_readed << ", Checked: " << stations_checked << " (" << stations_checked-c << "/s) Updated: " << stations_updated
                 << " (" << stations_updated-u << "/s)" << endl;
             // cout << updates_pending << " updates pending..." << endl;
-            r = stations_readed;
             c = stations_checked;
             u = stations_updated;
+            seconds++;
+
+            if (stations_checked >= stations_readed && stations_checked > 0) {
+                cout << endl << "-----" <<  seconds << " sec -----" << endl << endl << "Restart checking after 30s" << endl << endl;
+                sleep(15);
+                stations_checked = 0;
+                c = 0;
+                seconds = 0;
+                for (auto &i : station_map) {
+                    shared_ptr<Station> ptr = i.second;
+                    ptr->started = false;
+                }
+                cout << "All state is reset" << endl << endl;
+            }
             sleep(1);
         }
     });
@@ -237,9 +267,8 @@ void check_online(void) {
             << bsoncxx::builder::stream::finalize
             );
 
-    if (DEBUG)
-        cout << "Fetching Mongo data" << endl;
-    unsigned int c=0;
+    cout << "Fetching Mongo data..." << endl;
+    unsigned int nTest=0;
 
     for (auto doc : cursor) {
         try {
@@ -269,20 +298,19 @@ void check_online(void) {
         // boost::this_thread::sleep(boost::posix_time::milliseconds(1));
     
         //zzz+ for test
-        // c++;
-        // if (c > 2) break;
+        // nTest++;
+        // if (nTest > 2) break;
         //zzz-
     }
-    if (DEBUG) {
-        cout << "Fetched " << station_map.size() << " stations from mongo" << endl << endl;
-        cout << "Starting workers --> " << endl;
-    }
+    stations_readed = station_map.size();
+    cout << "Fetched " << station_map.size() << " stations from MongoDB" << endl << endl;
+
     for (auto &i : station_map) {
         svc.post(std::bind(check_station, i.second));
     }
-    //zzz+ must uncomment
+    cout << "Added threads" << endl << endl;
+
     // svc.post(std::bind(check_online));
-    //zzz-
 }
 
 
@@ -304,6 +332,7 @@ void check_all(void) {
             strTmp = "";
           (*one_station).url = strTmp;
           (*one_station).id = doc["_id"].get_oid();
+          (*one_station).started = false;
           if (doc["station_type"]) (*one_station).type = doc["station_type"].get_utf8().value.to_string();
           if (doc["metaint"]) (*one_station).icy = boost::lexical_cast<unsigned int>(doc["metaint"].get_utf8().value.to_string());
           station_map[one_station->id.value.to_string()] = one_station;
@@ -324,58 +353,67 @@ void check_all(void) {
 }
 
 void check_station (shared_ptr<Station> ptr) {
-    try {
-        // checking the URL of the station
-        if (ptr->url.empty()) {
-            if (DEBUG) cout << "Check Station URL not found!" << endl;
-            return;
+    while (true) {
+        if (ptr->started) {
+            boost::this_thread::sleep(boost::posix_time::milliseconds(10000));
+            continue;
         } else {
-            if (DEBUG) cout << "Station URL: " << ptr->url << endl;
+            ptr->started = true;
         }
 
-        // fetching...
-        auto resp = curl_get(ptr);
+        stations_checked++;
+        try {
+            // checking the URL of the station
+            if (ptr->url.empty()) {
+                if (DEBUG) cout << "Check Station URL not found!" << endl;
+                continue;
+            } else {
+                if (DEBUG) cout << "Station URL: " << ptr->url << endl;
+            }
 
-        // processing response...
-        string body = resp.second;
-        ++stations_checked;
-        if (DEBUG) {
-            cout << "~~~~~~~~~~~~~~~~ check station ~~~~~~~~~~~~~" << endl;
-            cout << "[" << stations_checked <<  "] URL: " << ptr->url << endl;
-            cout << "  Header: " << resp.first << endl;
-            cout << "  Body: " << !body.empty() << endl;
-            // cout << " Body data: " << body << endl;
-            cout << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" << endl;
-        }
+            // fetching...
+            auto resp = curl_get(ptr);
 
-        auto filter = make_shared<bsoncxx::builder::stream::document>();
-        auto update = make_shared<bsoncxx::builder::stream::document>();
-        (*filter) << "_id" << ptr->id;
-        (*update) << "$set" << open_document; // << "response" << !body.empty();
+            // processing response...
+            string body = resp.second;
+            if (DEBUG) {
+                cout << "~~~~~~~~~~~~~~~~ check station ~~~~~~~~~~~~~" << endl;
+                cout << "[" << stations_checked <<  "] URL: " << ptr->url << endl;
+                cout << "  Header: " << resp.first << endl;
+                cout << "  Body: " << !body.empty() << endl;
+                // cout << " Body data: " << body << endl;
+                cout << "~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~~" << endl;
+            }
 
-        bool could_parse = false;
-        if (resp.first.empty() && resp.second.empty()) {
-            (*update) << "response" << false;
-            could_parse = true;
-        } else {
-            // parsing the body...
-            could_parse = parse_station (update, resp, ptr);
+            auto filter = make_shared<bsoncxx::builder::stream::document>();
+            auto update = make_shared<bsoncxx::builder::stream::document>();
+            (*filter) << "_id" << ptr->id;
+            (*update) << "$set" << open_document; // << "response" << !body.empty();
+
+            bool could_parse = false;
+            if (resp.first.empty() && resp.second.empty()) {
+                (*update) << "response" << false;
+                could_parse = true;
+            } else {
+                // parsing the body...
+                could_parse = parse_station (update, resp, ptr);
+            }
+            (*update) << close_document;
+            if (DEBUG) {
+                cout << "Check Station update:" << endl << bsoncxx::to_json(*update) << endl;
+            }
+            if (could_parse) {
+                // svc_mongo.post(std::bind(update_station, filter, update));
+                if (ptr->now.empty() == false)
+                    svc_mongo.post(std::bind(send_station_to_server, ptr));
+                // updates_pending++;
+            }
+            //cout << "Filter: " << bsoncxx::to_json(filter) << endl;
+            //cout << "Update: " << bsoncxx::to_json(update) << endl;
+            //if (++c >= 1) return 0;
+        } catch (std::exception &e) {
+            cout << "***** Exception on check_station: " << e.what() << endl;
         }
-        (*update) << close_document;
-        if (DEBUG) {
-            cout << "Check Station update:" << endl << bsoncxx::to_json(*update) << endl;
-        }
-        if (could_parse) {
-            // svc_mongo.post(std::bind(update_station, filter, update));
-            if (ptr->now.empty() == false)
-                svc_mongo.post(std::bind(send_station_to_server, ptr));
-            // updates_pending++;
-        }
-        //cout << "Filter: " << bsoncxx::to_json(filter) << endl;
-        //cout << "Update: " << bsoncxx::to_json(update) << endl;
-        //if (++c >= 1) return 0;
-    } catch (std::exception &e) {
-        cout << "***** Exception on check_station: " << e.what() << endl;
     }
 }
 
@@ -629,11 +667,14 @@ void send_station_to_server(shared_ptr<Station> ptr)
         release = tmp->release;
         release_id = tmp->release_id.value.to_string();
     }
-    artist = tmp->artist;
-    bool found = false;
-    artist_id = match_artist(artist, &found).value.to_string();
-    if (found == false)
-        artist_id = str_nop;
+    boost::algorithm::trim(tmp->artist);
+    if (tmp->artist.empty() == false) {
+        artist = tmp->artist;
+        bool found = false;
+        artist_id = match_artist(artist, &found).value.to_string();
+        if (found == false)
+            artist_id = str_nop;
+    }
 
     delete tmp;
 
@@ -655,30 +696,44 @@ void send_station_to_server(shared_ptr<Station> ptr)
     CURL *curl;
     CURLcode res;
     curl = curl_easy_init();
-    if(curl) 
+    if(curl)
     {
+        char *encoded_str;
         string data = "";
         data.append("station_type=");
         data.append(station_type);
         data.append("&now=");
-        data.append(now);
+        // data.append(now);
+        encoded_str = curl_easy_escape(curl, now.c_str(), now.length());
+        data.append(encoded_str);
+        curl_free(encoded_str);
         data.append("&now_id=");
         data.append(now_id);
         data.append("&artist=");
-        data.append(artist);
+        // data.append(artist);
+        encoded_str = curl_easy_escape(curl, artist.c_str(), artist.length());
+        data.append(encoded_str);
+        curl_free(encoded_str);
         data.append("&artist_id=");
         data.append(artist_id);
         data.append("&release=");
-        data.append(release);
+        // data.append(release);
+        encoded_str = curl_easy_escape(curl, release.c_str(), release.length());
+        data.append(encoded_str);
+        curl_free(encoded_str);
         data.append("&release_id=");
         data.append(release_id);
         if (DEBUG)
             cout << "POSTFIELDS : " << data << endl;
 
+        struct curl_slist *headers=NULL;
+        // headers = curl_slist_append(headers, "Content-Type: 'application/x-www-form-urlencoded");
+        headers = curl_slist_append(headers, "User-Agent: Mozilla");
+
         curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:3000/station_info");
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYHOST, 0L);
-        curl_easy_setopt(curl, CURLOPT_USERAGENT, "Mozilla");
+        curl_easy_setopt(curl, CURLOPT_HTTPHEADER, headers);
         curl_easy_setopt(curl, CURLOPT_POSTFIELDS, data.c_str());
         curl_easy_setopt(curl, CURLOPT_POSTFIELDSIZE, data.length());
         curl_easy_setopt(curl, CURLOPT_POST, 1L);
@@ -689,6 +744,7 @@ void send_station_to_server(shared_ptr<Station> ptr)
         {
             printf("Error: %s\n", strerror(res));
         }
+        curl_slist_free_all(headers);
         curl_easy_cleanup(curl);
     }
 }
@@ -1003,6 +1059,7 @@ pair<string,string> curl_get (shared_ptr<Station> ptr) {
     if (res != CURLE_OK && DEBUG) {
         cout << "Error running curl: " << curl_easy_strerror(res) << endl;
     }
+    curl_slist_free_all(cab);
     curl_easy_cleanup(curl);
   }
   return {header.first, buffer.first};
