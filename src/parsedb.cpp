@@ -70,7 +70,7 @@ using bsoncxx::builder::stream::close_document;
 
 const unsigned int NUMTHREADS = 768;
 const unsigned int NUMTHREADS_MONGO = 32;
-bool DEBUG = false;
+bool DEBUG = true;
 atomic<int> stations_readed;
 atomic<int> stations_checked;
 atomic<int> stations_updated;
@@ -80,12 +80,12 @@ map<string, shared_ptr<Station>> station_map;
 vector<shared_ptr<Station>> station_vector;
 mongocxx::instance inst{};
 /* when this app runs on server */
-// const string connection_string = "mongodb://mongoadminrole:susuSUSU1234!%40%23%24@127.0.0.1:27018/radio?authSource=admin";
+const string connection_string = "mongodb://mongoadminrole:susuSUSU1234!%40%23%24@127.0.0.1:27018/radio?authSource=admin";
 /* when this app runs on my local */
-const string connection_string = "mongodb://mongoadminrole:susuSUSU1234!%40%23%24@localhost:27018?authSource=admin&ext.ssh.server=178.33.122.217:22&ext.ssh.username=root&ext.ssh.password=susuSUSU1234!@#$";
+//const string connection_string = "mongodb://mongoadminrole:susuSUSU1234!%40%23%24@localhost:27018?authSource=admin&ext.ssh.server=178.33.122.217:22&ext.ssh.username=root&ext.ssh.password=susuSUSU1234!@#$";
 
-// mongocxx::pool mongopool {mongocxx::uri{connection_string}};
-mongocxx::pool mongopool {mongocxx::uri{}};
+mongocxx::pool mongopool {mongocxx::uri{connection_string}};
+//mongocxx::pool mongopool {mongocxx::uri{}};
 boost::asio::io_service svc_mongo;
 boost::asio::io_service svc;
 int main (int ac, char **av) {
@@ -253,13 +253,15 @@ void check_online(void) {
             (*one_station).url = str_stream_url;
             (*one_station).type = doc["station_type"].get_utf8().value.to_string(); // shoutcast, icecast, etc
             (*one_station).id = doc["_id"].get_oid();
-            if (doc["metaint"].length() > 0)
-                (*one_station).icy = doc["metaint"].get_int32().value;
+            // if (doc["metaint"].length() > 0)
+            //    (*one_station).icy = doc["metaint"].get_int32().value;
             station_map[one_station->id.value.to_string()] = one_station;
         } catch (std::exception &e) {
             if (DEBUG)
                 cout << "***** Exception on fetching mongo data: " << e.what() << endl;
         }
+
+        boost::this_thread::sleep(boost::posix_time::milliseconds(10));
     
         //zzz+ for test
         // c++;
@@ -400,7 +402,8 @@ bool parse_station (shared_ptr<bsoncxx::builder::stream::document> update, pair<
                     string now_buffer = string(rptr+pos, rptr+pos+len);
                     // cout << "@@@@@@@@ icecast: " << ptr->url << "@@@@ POS: " << pos << " LEN: " << len << " NOW: " << now_buffer << endl;
                     string now_tmp = regex_fetch(now_buffer, "StreamTitle='(.*)';");
-                    cout << "now_tmp = " << now_tmp << endl;
+                    if (DEBUG)
+                        cout << "now_tmp = " << now_tmp << endl;
                     string now = now_tmp;
                     size_t last_pos = now_tmp.find("';");
                     if (last_pos != string::npos) {
@@ -664,7 +667,8 @@ void send_station_to_server(shared_ptr<Station> ptr)
         data.append(release);
         data.append("&release_id=");
         data.append(release_id);
-        cout << "POSTFIELDS : " << data << endl;
+        if (DEBUG)
+            cout << "POSTFIELDS : " << data << endl;
 
         curl_easy_setopt(curl, CURLOPT_URL, "http://localhost:3000/station_info");
         curl_easy_setopt(curl, CURLOPT_SSL_VERIFYPEER, 0L);
@@ -798,11 +802,11 @@ SongDetail* match_song_ex(string name)
             string song = name.substr(it+3, it2);
             boost::algorithm::trim(artist);
             boost::algorithm::trim(song);
-            // if (DEBUG) {
+            if (DEBUG) {
                 cout << "Match Song compost:   " << name << endl;
                 cout << "Artist:   " << artist << endl;
                 cout << "Song:     " << song << endl;
-            // }
+            }
             
             auto cursor = songs.find_one( bsoncxx::builder::stream::document{}
                     << "title" << song
@@ -810,7 +814,7 @@ SongDetail* match_song_ex(string name)
                     << bsoncxx::builder::stream::finalize
                     );
             if (cursor) {
-                // if (DEBUG)
+                if (DEBUG)
                     cout << "songs --> title, join_artist" << endl;
                 (*ret).song_id = ((*cursor).view()["_id"].get_oid());
                 (*ret).release_id = ((*cursor).view()["release_id"].get_oid());
@@ -823,7 +827,7 @@ SongDetail* match_song_ex(string name)
                         << bsoncxx::builder::stream::finalize
                         );
                 if (cursor) {
-                    // if (DEBUG)
+                    if (DEBUG)
                         cout << "songs --> title" << endl;
                     (*ret).song_id = ((*cursor).view()["_id"].get_oid());
                     (*ret).release_id = ((*cursor).view()["release_id"].get_oid());
@@ -836,7 +840,7 @@ SongDetail* match_song_ex(string name)
                 (*ret).artist = artist;
 
         } else {
-            // if (DEBUG)
+            if (DEBUG)
                 cout << "[search with total as title] songs --> title" << endl;
             auto cursor = songs.find_one( bsoncxx::builder::stream::document{}
                     << "title" << name
