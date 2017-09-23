@@ -69,10 +69,10 @@ using bsoncxx::builder::stream::close_document;
 // id   check  karma  url   fURL  title  fail#  lastSuc  error  type
 //
 
-// const unsigned int NUMTHREADS = 768;
-// const unsigned int NUMTHREADS_MONGO = 32;
-const unsigned int NUMTHREADS = 10000;
-const unsigned int NUMTHREADS_MONGO = 10000;
+//const unsigned int NUMTHREADS = 768;
+//const unsigned int NUMTHREADS_MONGO = 32;
+const unsigned int NUMTHREADS = 8000;
+const unsigned int NUMTHREADS_MONGO = 1000;
 
 bool DEBUG = false;
 
@@ -89,8 +89,8 @@ const string connection_string = "mongodb://mongoadminrole:susuSUSU1234!%40%23%2
 /* when this app runs on my local */
 // const string connection_string = "mongodb://mongoadminrole:susuSUSU1234!%40%23%24@localhost:27018?authSource=admin&ext.ssh.server=178.33.122.217:22&ext.ssh.username=root&ext.ssh.password=susuSUSU1234!@#$";
 
-// mongocxx::pool mongopool {mongocxx::uri{connection_string}};
-mongocxx::pool mongopool {mongocxx::uri{}};
+mongocxx::pool mongopool {mongocxx::uri{connection_string}};
+// mongocxx::pool mongopool {mongocxx::uri{}};
 boost::asio::io_service svc_mongo;
 boost::asio::io_service svc;
 int main (int ac, char **av) {
@@ -298,8 +298,8 @@ void check_online(void) {
         // boost::this_thread::sleep(boost::posix_time::milliseconds(1));
     
         //zzz+ for test
-        // nTest++;
-        // if (nTest > 2) break;
+        nTest++;
+        if (nTest >= NUMTHREADS) break;
         //zzz-
     }
     stations_readed = station_map.size();
