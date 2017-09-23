@@ -56,6 +56,51 @@ const unsigned int NUMTHREADS_MONGO = 32; // database threads to process matches
 bool DEBUG = false; // print debug information
 
 
+## Parsing all online radio stations
+
+Currently, this program can work for 8000 URLs.
+
+const unsigned int NUMTHREADS = 8000;
+
+### To run the app
+
+$ ./parsedb --online
+
+### Working flow
+
+report thread:
+- report checking and sending counts for every 1 second.
+
+check_online() function:
+
+- fetch all stations information from mongoDB
+The app fetch NUMTHREADS records from the database named 'stations_copy'.
+Each record be assigned to one thread.
+Each threads are fetching data from each url.
+This work is asynchronous processing
+The thread work for:
+        -- checking URL
+        -- fetching response
+        -- parsing the body
+        -- searching for specific information in artists, releases, songs collection of mongoDB's radio DB.
+        -- sending the information to nodejs server
+                send_station_to_server()
+                (urlencoding and POST data)
+        -- waiting for a condition flag. (ptr->started)
+
+- report thread:
+        When the checking for all records is finished, 
+        it would be reset all threads so that those are re-check.
+        
+        if (stations_checked >= stations_readed && stations_checked > 0) {
+                ...
+                ptr->started = false;
+                ...
+        }
+
+- parse_station
+        processing the response body for all type of stations
+
 ## You can recompile the software after changes running the make command.
 
 ### install mongodb and other libs on ubuntu
